@@ -1,52 +1,55 @@
-
-
 #include <jni.h>
-#include <android/bitmap.h>
-#include <android/log.h>
-#include <opencv2/opencv.hpp>
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include <GLES2/gl2.h>
+
+#include "common.hpp"
 
 using namespace cv;
 
-extern "C"
-JNIEXPORT jobject JNICALL
-Java_com_example_edgeviewer_MainActivity_processImage(JNIEnv *env, jobject, jobject bitmapIn) {
-    AndroidBitmapInfo info;
-    AndroidBitmap_getInfo(env, bitmapIn, &info);
+extern "C" JNIEXPORT void
 
-    void* pixels;
-    AndroidBitmap_lockPixels(env, bitmapIn, &pixels);
+JNICALL
+Java_net_zoyaaa02_androidopencvcamera_MyGLSurfaceView_processFrame(JNIEnv *env, jobject /* this */,
+                                                                      jint texIn, jint texOut,
+                                                                      jint w, jint h,
+                                                                      jboolean frontFacing) {
+    static UMat m;
 
-    Mat src(info.height, info.width, CV_8UC4, pixels);
-    Mat gray, edges;
+    LOGD("Processing on CPU");
+    int64_t t;
+    m.create(h, w, CV_8UC4);
 
-    // Convert to grayscale and detect edges
-    cvtColor(src, gray, COLOR_RGBA2GRAY);
-    GaussianBlur(gray, gray, Size(5,5), 1.5);
-    Canny(gray, edges, 50, 150);
+    // read
+    t = getTimeMs();
+    // expecting FBO to be bound, read pixels to mat
+    glReadPixels(0, 0, m.cols, m.rows, GL_RGBA, GL_UNSIGNED_BYTE, m.getMat(ACCESS_WRITE).data);
+    LOGD("glReadPixels() costs %d ms", getTimeInterval(t));
 
-    // Convert back to RGBA for display
-    Mat result;
-    cvtColor(edges, result, COLOR_GRAY2RGBA);
+    t = getTimeMs();
+    // Check if we should flip image due to frontFacing
+    // I don't think this should be required, but I can't find
+    // a way to get the OpenCV Android SDK to do this properly
+    // (also, time taken to flip image is negligible)
+    if(frontFacing){
+        flip(m, m, 1);
+    }
+    LOGD("flip() costs %d ms", getTimeInterval(t));
 
-    AndroidBitmap_unlockPixels(env, bitmapIn);
+    // modify
+    t = getTimeMs();
+    cvtColor(m, m, CV_BGRA2GRAY);
+    Laplacian(m, m, CV_8U);
+    multiply(m, 10, m);
+    cvtColor(m, m, CV_GRAY2BGRA);
+    LOGD("Laplacian() costs %d ms", getTimeInterval(t));
 
-    // Create output Bitmap
-    jclass bitmapCls = env->FindClass("android/graphics/Bitmap");
-    jmethodID createBitmap = env->GetStaticMethodID(
-            bitmapCls, "createBitmap",
-            "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
-    jstring configName = env->NewStringUTF("ARGB_8888");
-    jclass configCls = env->FindClass("android/graphics/Bitmap$Config");
-    jmethodID valueOf = env->GetStaticMethodID(configCls, "valueOf",
-                                               "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;");
-    jobject bitmapConfig = env->CallStaticObjectMethod(configCls, valueOf, configName);
-    jobject bitmapOut = env->CallStaticObjectMethod(bitmapCls, createBitmap,
-                                                    info.width, info.height, bitmapConfig);
-
-    void* resultPixels;
-    AndroidBitmap_lockPixels(env, bitmapOut, &resultPixels);
-    memcpy(resultPixels, result.data, result.total() * result.elemSize());
-    AndroidBitmap_unlockPixels(env, bitmapOut);
-
-    return bitmapOut;
+    // write back
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texOut);
+    t = getTimeMs();
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m.cols, m.rows, GL_RGBA, GL_UNSIGNED_BYTE, m.getMat(ACCESS_READ).data);
+    LOGD("glTexSubImage2D() costs %d ms", getTimeInterval(t));
 }

@@ -1,21 +1,24 @@
-cmake_minimum_required(VERSION 3.10.2)
-project("edgeviewer")
+# Path definitions
+set(pathToProject /Users/zoyaaa02/Documents/Projects/AndroidOpenCVCamera)
+set(pathToOpenCv /Users/zoyaaa02/Documents/Projects/OpenCV-android-sdk)
 
-add_library(edgeviewer SHARED src/main/cpp/native-lib.cpp)
+cmake_minimum_required(VERSION 3.4.1)
 
-# OpenCV path
-set(OpenCV_DIR "C:/OpenCV-android-sdk/OpenCV-android-sdk/sdk/native/jni")
-find_package(OpenCV REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
+# Make sure we use flags for OpenGL in cpp
+set(CMAKE_VERBOSE_MAKEFILE on)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
 
-# Find system libraries
-find_library(log-lib log)
-find_library(android-lib android)
-find_library(jnigraphics-lib jnigraphics)   # ✅ Add this line
+# OpenCV includes
+include_directories(${pathToOpenCv}/sdk/native/jni/include)
 
-target_link_libraries(
-        edgeviewer
-        ${OpenCV_LIBS}
-        ${log-lib}
-        ${android-lib}
-        ${jnigraphics-lib})                 # ✅ Add this line too
+#Added by IDE on project create
+set(CPP_ROOT src/main/cpp)
+set(SRC_FILES ${CPP_ROOT}/common.hpp ${CPP_ROOT}/native-lib.cpp)
+add_library( native-lib SHARED ${SRC_FILES} )
+
+# OpenCV library
+add_library( lib_opencv SHARED IMPORTED )
+set_target_properties(lib_opencv PROPERTIES IMPORTED_LOCATION ${pathToProject}/app/src/main/jniLibs/${ANDROID_ABI}/libopencv_java3.so)
+
+# Link libraries
+target_link_libraries( native-lib lib_opencv android log )
